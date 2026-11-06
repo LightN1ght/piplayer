@@ -2,6 +2,8 @@
 set -eu
 case "${1:-}" in
   start)
+    # An unconfigured public image must not expose shared credentials.
+    [ ! -e /etc/player/setup-required ] || exit 0
     # Run asynchronously: an absent Wi-Fi adapter must not block SSH or video.
     start-stop-daemon -S -b -m -p /run/player-ap.pid -x /usr/sbin/player-ap
     ;;

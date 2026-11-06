@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 main() {
+configure=0
+public=0
+for option in "$@"; do
+  case "$option" in
+    --configure) configure=1 ;;
+    --public) public=1 ;;
+    *) echo 'Usage: scripts/build.sh [--configure] [--public]' >&2; exit 1 ;;
+  esac
+done
 project=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 work=${PIPLAYER_WORK:-${XDG_CACHE_HOME:-$HOME/.cache}/piplayer-build}
 version=2025.02.19
@@ -33,6 +42,14 @@ if [[ ! -d "$work/buildroot-$version" ]]; then
   tar -xf "$archive" -C "$work"
 fi
 python3 "$project/scripts/configure.py"
+if [[ "$public" == 1 ]]; then
+  touch "$project/.local/public-mode"
+  # Buildroot applies its users table after post-build; lock the account there.
+  printf '%s\n' 'player 1000 player 1000 * /data /bin/sh - PiPlayer' > "$project/.local/users.txt"
+  chmod 600 "$project/.local/users.txt"
+else
+  rm -f "$project/.local/public-mode"
+fi
 "$project/scripts/fetch-web.sh"
 # Buildroot does not accept spaces in source, output or BR2_EXTERNAL paths.
 mkdir -p "$work/project"
@@ -41,7 +58,7 @@ br="$work/buildroot-$version"
 # Command-line DL_DIR intentionally keeps the short alias: Buildroot normally
 # dereferences download directories, which would reintroduce project spaces.
 args=(-C "$br" "O=$work/output" "BR2_EXTERNAL=$work/project" "BR2_DL_DIR=$work/downloads" "DL_DIR=$work/downloads")
-if [[ ! -f "$work/output/.config" || "${1:-}" == --configure ]]; then
+if [[ ! -f "$work/output/.config" || "$configure" == 1 ]]; then
   make "${args[@]}" player_defconfig
 fi
 echo "Building; log: $project/.build/build.log"

@@ -1,0 +1,29 @@
+#!/bin/sh
+# Apply one-time provisioning from the first partition of the root disk.
+set -eu
+marker=${PLAYER_SETUP_MARKER:-/etc/player/setup-required}
+[ -e "$marker" ] || exit 0
+root_device=$(awk '$5 == "/" { print $3; exit }' /proc/self/mountinfo)
+sys_partition=$(readlink -f "/sys/dev/block/$root_device")
+sys_disk=${sys_partition%/*}
+boot_device=
+for part in "$sys_disk"/*/partition; do
+  [ -f "$part" ] || continue
+  [ "$(cat "$part")" = 1 ] || continue
+  name=${part%/partition}; name=${name##*/}
+  boot_device=/dev/$name
+  break
+done
+[ -n "$boot_device" ] || exit 1
+mkdir -p /run/player-boot
+mount -t vfat -o rw,nosuid,nodev,noexec "$boot_device" /run/player-boot || exit 1
+trap 'umount /run/player-boot 2>/dev/null || true' EXIT
+file=/run/player-boot/piplayer-setup.txt
+[ -f "$file" ] || exit 0
+/usr/libexec/player-apply-setup "$file" || exit 1
+# Deleting before clearing the marker makes interruption fail closed. FAT
+# deletion is not a guarantee of secure erasure; do not reuse old secrets.
+rm -f "$file"
+sync
+rm -f "$marker"
+sync
