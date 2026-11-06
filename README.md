@@ -124,7 +124,7 @@ ssh -i dist/admin_ed25519 root@192.168.50.1
 
 ## Сборка из исходников
 
-Нужен Linux x86_64, доступ к публичным источникам зависимостей и свободное место для Buildroot, toolchain и output. Подготовьте `make`, `gcc`, `g++`, `cpio`, `rsync`, `bc`, `unzip`, `wget`, `curl`, `file`, `patch`, `perl`, `python3`, `tar`, `xz`, `bison`, `flex`, `openssl`, `ssh-keygen` и стандартные утилиты сборки. Для upload/smoke нужны клиентские `ssh` и `sftp` из OpenSSH. Скрипт проверяет часть зависимостей, остальные проверяет Buildroot. Для работы с видео и тестов отдельно нужны FFmpeg/ffprobe с libx264 на хосте.
+Нужен Linux x86_64, доступ к публичным источникам зависимостей и свободное место для Buildroot, toolchain и output. Подготовьте `make`, `gcc`, `g++`, `cpio`, `rsync`, `bc`, `unzip`, `wget`, `curl`, `file`, `patch`, `perl`, `python3`, `tar`, `xz`, `bison`, `flex`, `openssl`, `ssh-keygen` и стандартные утилиты сборки. Для upload/smoke нужны клиентские `ssh` и `sftp` из OpenSSH. Скрипт выводит все отсутствующие команды из своего списка сразу; дополнительные требования пакетов проверяет Buildroot. Для работы с видео и тестов отдельно нужны FFmpeg/ffprobe с libx264 на хосте.
 
 Из корня исходников:
 
