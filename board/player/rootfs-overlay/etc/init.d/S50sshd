@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+  start)
+    umask 077
+    # A unique Ed25519 host key is quick to generate even under ARM emulation.
+    if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
+      ssh-keygen -q -t ed25519 -N '' -f /etc/ssh/ssh_host_ed25519_key
+    fi
+    mkdir -p /run/sshd
+    start-stop-daemon -S -p /run/sshd.pid -x /usr/sbin/sshd
+    ;;
+  stop) start-stop-daemon -K -p /run/sshd.pid -x /usr/sbin/sshd -o ;;
+  reload) [ ! -f /run/sshd.pid ] || kill -HUP "$(cat /run/sshd.pid)" ;;
+  restart) "$0" stop; sleep 1; "$0" start ;;
+  *) echo "Usage: $0 {start|stop|restart|reload}" >&2; exit 1 ;;
+esac

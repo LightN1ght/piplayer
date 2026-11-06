@@ -1,0 +1,3 @@
+# playerd needs both stat itself and GNU-style -c format strings.
+CONFIG_STAT=y
+CONFIG_FEATURE_STAT_FORMAT=y

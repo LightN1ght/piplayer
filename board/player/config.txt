@@ -1,0 +1,10 @@
+[all]
+arm_64bit=1
+kernel=Image
+start_file=start4.elf
+fixup_file=fixup4.dat
+gpu_mem=64
+enable_uart=1
+dtoverlay=disable-bt
+disable_overscan=1
+

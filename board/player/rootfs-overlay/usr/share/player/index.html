@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>PiPlayer</title>
+<link rel="stylesheet" href="/player.css">
+<main id="screen">
+  <video id="video" autoplay muted playsinline></video>
+  <div id="overlay">
+    <p id="message" role="status">Подключение…</p>
+    <button id="start" hidden>Смотреть со звуком</button>
+  </div>
+  <button id="fullscreen" aria-label="На весь экран" title="На весь экран">⛶</button>
+</main>
+<script src="/vendor/hls.light.min.js"></script>
+<script src="/player.js"></script>
+</html>
+

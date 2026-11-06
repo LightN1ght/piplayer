@@ -1,0 +1,164 @@
+#!/bin/sh
+# Unprivileged media worker. Upload *.part, then rename to *.ready.mp4.
+set -u
+data=${PLAYER_DATA:-/data}
+runtime=${PLAYER_RUNTIME:-/run/player}
+ffmpeg=${PLAYER_FFMPEG:-ffmpeg}
+ffprobe=${PLAYER_FFPROBE:-ffprobe}
+interval=${PLAYER_INTERVAL:-2}
+stall_timeout=${PLAYER_STALL_TIMEOUT:-60}
+active="$data/media/current.mp4"
+child=
+signature=
+generation=
+sequence=0
+instance=$(cat /proc/sys/kernel/random/uuid)
+state=waiting
+audio=false
+error=
+retry_after=0
+last_progress=0
+playlist_signature=
+mkdir -p "$data/media" "$data/incoming" "$runtime/hls"
+
+publish() {
+  printf '{"state":"%s","generation":"%s","audio":%s,"error":"%s"}\n' \
+    "$state" "$generation" "$audio" "$error" > "$runtime/status.tmp"
+  mv -f "$runtime/status.tmp" "$runtime/status.json"
+}
+stop_stream() {
+  if [ -n "$child" ]; then
+    kill -CONT "$child" 2>/dev/null || true
+    kill "$child" 2>/dev/null || true
+    wait "$child" 2>/dev/null || true
+    child=
+  fi
+}
+trap 'stop_stream; exit 0' INT TERM
+trap 'stop_stream' EXIT
+
+validate() {
+  candidate=$1
+  # Count packets to scan the whole container, not just trust its extension.
+  probe=$("$ffprobe" -v error -select_streams v:0 -count_packets \
+    -show_entries stream=codec_name,pix_fmt,nb_read_packets,width,height \
+    -of default=noprint_wrappers=1 "$candidate" 2>/dev/null) || return 1
+  printf '%s\n' "$probe" | grep -qx 'codec_name=h264' || return 1
+  printf '%s\n' "$probe" | grep -qx 'pix_fmt=yuv420p' || return 1
+  packets=$(printf '%s\n' "$probe" | sed -n 's/^nb_read_packets=//p')
+  case "$packets" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$packets" -gt 0 ] || return 1
+  codec=$("$ffprobe" -v error -select_streams a:0 -show_entries stream=codec_name \
+    -of default=noprint_wrappers=1:nokey=1 "$candidate" 2>/dev/null) || return 1
+  case "$codec" in aac) validated_audio=true ;; '') validated_audio=false ;; *) return 1 ;; esac
+}
+
+for dependency in "$ffmpeg" "$ffprobe" stat; do
+  if ! command -v "$dependency" >/dev/null 2>&1; then
+    state=error
+    error=missing_dependency
+    publish
+    printf 'PiPlayer: missing required command: %s\n' "$dependency" >&2
+    sleep 30
+    exit 1
+  fi
+done
+publish
+while :; do
+  for candidate in "$data/incoming/"*.ready.mp4; do
+    [ -f "$candidate" ] || continue
+    if validate "$candidate"; then
+      if mv -f "$candidate" "$active"; then
+        sync
+        error=
+        signature=
+        retry_after=0
+      else
+        error=upload_failed
+      fi
+    else
+      mv -f "$candidate" "$candidate.rejected" 2>/dev/null || true
+      error=unsupported_media
+    fi
+    publish
+  done
+
+  if [ ! -f "$active" ]; then
+    stop_stream
+    state=waiting
+    generation=
+    signature=
+    publish
+    sleep "$interval"
+    continue
+  fi
+  current=$(stat -c '%i:%s:%Y' "$active" 2>/dev/null) || { sleep "$interval"; continue; }
+  read -r uptime_seconds unused < /proc/uptime
+  now=${uptime_seconds%%.*}
+  if [ "$signature" != "$current" ] && [ "$now" -ge "$retry_after" ]; then
+    if ! validate "$active"; then
+      state=error
+      error=unsupported_media
+      retry_after=$((now + 10))
+      publish
+      sleep "$interval"
+      continue
+    fi
+    stop_stream
+    # Segment paths change on restart, avoiding browser cache collisions.
+    rm -rf "$runtime/hls/"*
+    sequence=$((sequence + 1))
+    generation="$instance-$$-$sequence"
+    mkdir -p "$runtime/hls/$generation"
+    state=buffering
+    audio=$validated_audio
+    error=
+    publish
+    "$ffmpeg" -nostdin -hide_banner -loglevel error -nostats \
+      -re -stream_loop -1 -i "$active" -map 0:v:0 -map '0:a:0?' -sn -dn \
+      -c copy -f hls -hls_time 2 -hls_list_size 5 -hls_delete_threshold 2 \
+      -hls_flags delete_segments+omit_endlist+temp_file \
+      -hls_segment_filename "$runtime/hls/$generation/segment-%09d.ts" \
+      "$runtime/hls/$generation/index.m3u8" 2> "$runtime/ffmpeg.log" &
+    child=$!
+    signature=$current
+    playlist_signature=
+    last_progress=$now
+  fi
+  if [ -n "$child" ]; then
+    if ! kill -0 "$child" 2>/dev/null; then
+      wait "$child" 2>/dev/null || true
+      child=
+      signature=
+      state=error
+      error=stream_failed
+      retry_after=$((now + 5))
+    elif [ -f "$runtime/hls/$generation/index.m3u8" ]; then
+      state=playing
+      progress=$(stat -c '%i:%s:%Y' "$runtime/hls/$generation/index.m3u8" 2>/dev/null || echo '')
+      if [ "$progress" != "$playlist_signature" ]; then
+        playlist_signature=$progress
+        last_progress=$now
+      fi
+    fi
+    if [ -n "$child" ] && [ "$((now - last_progress))" -ge "$stall_timeout" ]; then
+      stop_stream
+      signature=
+      state=error
+      error=stream_stalled
+      retry_after=$((now + 5))
+    fi
+    # A broken input cannot grow a log without bounds on the RAM filesystem.
+    logsize=$(stat -c %s "$runtime/ffmpeg.log" 2>/dev/null || echo 0)
+    if [ "$logsize" -gt 65536 ]; then
+      stop_stream
+      signature=
+      state=error
+      error=stream_failed
+      retry_after=$((now + 10))
+    fi
+  fi
+  publish
+  sleep "$interval"
+done
+

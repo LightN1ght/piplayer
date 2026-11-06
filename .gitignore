@@ -1,0 +1,21 @@
+.build/
+.local/
+dist/
+vendor/
+__pycache__/
+*.pyc
+
+# Generated access data and media belong outside the source repository.
+/credentials.json
+/admin_ed25519
+/admin_ed25519.pub
+/player.conf
+/users.txt
+*.img
+*.img.xz
+*.qcow2
+*.mp4
+*.MP4
+*.mov
+*.MOV
+

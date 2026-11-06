@@ -1,0 +1,22 @@
+#!/bin/sh
+# DHCP never delays boot when an Ethernet cable is absent.
+case "${1:-}" in
+  start)
+    ip link set lo up
+    for path in /sys/class/net/eth* /sys/class/net/en* /sys/class/net/usb*; do
+      [ -e "$path" ] || continue
+      interface=${path##*/}
+      ip link set "$interface" up
+      udhcpc -b -i "$interface" -x "hostname:$(hostname)" -p "/run/udhcpc.$interface.pid" -t 3 -T 1 -A 5 > "/run/udhcpc.$interface.log" 2>&1 &
+    done
+    ;;
+  stop)
+    for pidfile in /run/udhcpc.*.pid; do
+      [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null
+    done
+    ;;
+  restart) "$0" stop; "$0" start ;;
+  *) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac
+exit 0
+

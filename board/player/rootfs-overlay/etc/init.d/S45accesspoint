@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+  start)
+    # Run asynchronously: an absent Wi-Fi adapter must not block SSH or video.
+    start-stop-daemon -S -b -m -p /run/player-ap.pid -x /usr/sbin/player-ap
+    ;;
+  stop)
+    for pidfile in /run/player-ap.pid /run/hostapd.pid /run/dnsmasq-player.pid; do
+      [ ! -f "$pidfile" ] || kill "$(cat "$pidfile")" 2>/dev/null || true
+    done
+    ;;
+  restart) "$0" stop; sleep 1; "$0" start ;;
+  *) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac
+

@@ -1,0 +1,57 @@
+#!/bin/sh
+set -eu
+trap 'rm -f /run/player-ap.pid' EXIT
+. /etc/player/player.conf
+modprobe brcmfmac 2>/dev/null || true
+tries=0
+until [ -e "/sys/class/net/$AP_INTERFACE" ]; do
+  tries=$((tries + 1))
+  if [ "$tries" -ge 30 ]; then
+    echo 'Wi-Fi adapter not found; Ethernet services remain available.' > /run/player/ap.log
+    exit 0
+  fi
+  sleep 1
+done
+umask 077
+mkdir -p /run/player-ap
+mkdir -p /run/dnsmasq-player
+chown nobody:nobody /run/dnsmasq-player
+chmod 750 /run/dnsmasq-player
+cat > /run/player-ap/hostapd.conf <<EOF
+interface=$AP_INTERFACE
+driver=nl80211
+ssid=$AP_SSID
+country_code=$AP_COUNTRY
+ieee80211d=1
+hw_mode=g
+channel=$AP_CHANNEL
+wmm_enabled=1
+ieee80211n=1
+auth_algs=1
+wpa=2
+wpa_passphrase=$AP_PASSWORD
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+EOF
+prefix=${AP_ADDRESS%.*}
+cat > /run/player-ap/dnsmasq.conf <<EOF
+interface=$AP_INTERFACE
+bind-dynamic
+user=nobody
+group=nobody
+port=0
+dhcp-range=$prefix.20,$prefix.100,255.255.255.0,12h
+dhcp-option=3
+dhcp-option=6
+dhcp-authoritative
+dhcp-leasefile=/run/dnsmasq-player/leases
+pid-file=/run/dnsmasq-player.pid
+EOF
+# The AP is a local media network; it does not advertise Internet routing/DNS.
+iw reg set "$AP_COUNTRY" 2>/dev/null || true
+ip link set "$AP_INTERFACE" up
+iw dev "$AP_INTERFACE" set power_save off 2>/dev/null || true
+ip address replace "$AP_ADDRESS/24" dev "$AP_INTERFACE"
+hostapd -B -P /run/hostapd.pid -f /run/player/ap.log /run/player-ap/hostapd.conf
+dnsmasq --conf-file=/run/player-ap/dnsmasq.conf
+

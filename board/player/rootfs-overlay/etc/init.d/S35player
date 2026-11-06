@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+  start)
+    mkdir -p /run/player /data/media /data/incoming
+    mountpoint -q /run/player || mount -t tmpfs -o size=96m,nosuid,nodev,noexec,mode=0755 tmpfs /run/player
+    mkdir -p /run/player/hls
+    chown player:player /run/player /run/player/hls /data /data/media /data/incoming
+    chown -R player:player /data/.ssh
+    chmod 755 /data /data/media /data/incoming
+    printf '%s\n' '{"state":"waiting","generation":"","audio":false,"error":""}' > /run/player/status.json
+    chown player:player /run/player/status.json
+    ;;
+  stop) ;;
+  *) echo "Usage: $0 {start|stop}" >&2; exit 1 ;;
+esac
+
