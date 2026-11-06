@@ -16,9 +16,16 @@ if [[ -d "$project/.build/tools/usr" ]]; then
   cp -a "$project/.build/tools/usr" "$work/tools/"
   export PATH="$work/tools/usr/bin:$PATH"
 fi
-for command in make gcc g++ cpio rsync bc unzip wget curl python3 file; do
-  command -v "$command" >/dev/null || { echo "Missing build dependency: $command" >&2; exit 1; }
+missing=()
+for command in make gcc g++ cpio rsync bc unzip wget curl python3 file \
+  patch perl tar xz bison flex openssl ssh-keygen sha256sum; do
+  command -v "$command" >/dev/null 2>&1 || missing+=("$command")
 done
+if (( ${#missing[@]} )); then
+  printf 'Missing build dependencies: %s\n' "${missing[*]}" >&2
+  echo 'Install the missing commands and run scripts/build.sh again.' >&2
+  exit 1
+fi
 if [[ ! -d "$work/buildroot-$version" ]]; then
   archive="$work/buildroot-$version.tar.xz"
   curl -fL --retry 3 -o "$archive" "https://buildroot.org/downloads/buildroot-$version.tar.xz"
