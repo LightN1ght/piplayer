@@ -19,7 +19,20 @@ cp "$images/sdcard.img" "$project/dist/piplayer-rpi4.img"
 cp "$images/Image" "$images/bcm2711-rpi-4-b.dtb" "$project/dist/boot/"
 xz -T2 -1 -k -f "$project/dist/piplayer-rpi4.img"
 (cd "$project/dist" && sha256sum piplayer-rpi4.img piplayer-rpi4.img.xz > SHA256SUMS)
-install -m 600 "$project/.local/admin_ed25519" "$project/dist/admin_ed25519"
-install -m 600 "$project/.local/credentials.json" "$project/dist/credentials.json"
+if [[ -f "$project/.local/public-mode" ]]; then
+  # Do not distribute generated build credentials with an image whose access
+  # is set individually at first boot. Existing files may belong to another
+  # build, so leave them untouched and make their status explicit.
+  if [[ -e "$project/dist/admin_ed25519" || -e "$project/dist/credentials.json" ]]; then
+    echo 'Public image: existing access files in dist are from another build and do not apply.' >&2
+  fi
+else
+  install -m 600 "$project/.local/admin_ed25519" "$project/dist/admin_ed25519"
+  install -m 600 "$project/.local/credentials.json" "$project/dist/credentials.json"
+fi
 "$project/scripts/package-source.sh"
-echo 'Image and private access credentials are in dist/.'
+if [[ -f "$project/.local/public-mode" ]]; then
+  echo 'Public image is in dist/; configure individual access before first boot.'
+else
+  echo 'Image and private access credentials are in dist/.'
+fi

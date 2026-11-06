@@ -139,7 +139,7 @@ class DirectHls(unittest.TestCase):
                         try:
                             if b'player-publish' in Path(f'/proc/{child}/cmdline').read_bytes():
                                 pids.append(int(child))
-                        except FileNotFoundError:
+                        except (FileNotFoundError, ProcessLookupError):
                             pass
                     return pids
 

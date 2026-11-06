@@ -1,0 +1,9 @@
+#!/bin/sh
+case "${1:-}" in
+  start)
+    /usr/sbin/player-setup > /run/player-setup.log 2>&1 ||
+      echo 'Initial setup failed; check the setup file and reboot.' > /run/player-setup.log
+    ;;
+  stop) ;;
+  *) echo 'Usage: S34setup {start|stop}' >&2; exit 1 ;;
+esac

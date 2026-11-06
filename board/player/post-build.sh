@@ -11,6 +11,15 @@ install -m 600 "$project/.local/player.conf" "$target/etc/player/player.conf"
 install -d "$target/usr/libexec"
 install -m 600 "$project/.local/admin_ed25519.pub" "$target/root/.ssh/authorized_keys"
 install -m 600 "$project/.local/admin_ed25519.pub" "$target/data/.ssh/authorized_keys"
+if [ -f "$project/.local/public-mode" ]; then
+  # Public images must not contain a shared usable account or admin key.
+  : > "$target/root/.ssh/authorized_keys"
+  : > "$target/data/.ssh/authorized_keys"
+  sed -i 's/^player:[^:]*:/player:*:/' "$target/etc/shadow"
+  touch "$target/etc/player/setup-required"
+else
+  rm -f "$target/etc/player/setup-required"
+fi
 chmod 700 "$target/data/.ssh"
 chmod 700 "$target/root/.ssh"
 grep -q -- '-c /usr/bin/playerd' "$target/etc/inittab" || \
