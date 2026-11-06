@@ -6,8 +6,9 @@ if [ ! -e "$target/bin/stat" ] && [ ! -e "$target/usr/bin/stat" ]; then
   echo 'PiPlayer requires BusyBox stat with FEATURE_STAT_FORMAT; check busybox.fragment.' >&2
   exit 1
 fi
-install -d "$target/etc/player" "$target/root/.ssh" "$target/data/.ssh" "$target/data/media" "$target/data/incoming" "$target/run/player" "$target/usr/share/player/vendor"
+install -d "$target/etc/player" "$target/root/.ssh" "$target/data/.ssh" "$target/data/media" "$target/data/incoming" "$target/data/still" "$target/run/player" "$target/usr/share/player/vendor" "$target/usr/share/player/still"
 install -m 600 "$project/.local/player.conf" "$target/etc/player/player.conf"
+install -d "$target/usr/libexec"
 install -m 600 "$project/.local/admin_ed25519.pub" "$target/root/.ssh/authorized_keys"
 install -m 600 "$project/.local/admin_ed25519.pub" "$target/data/.ssh/authorized_keys"
 chmod 700 "$target/data/.ssh"

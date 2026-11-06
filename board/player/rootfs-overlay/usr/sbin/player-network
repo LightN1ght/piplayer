@@ -1,0 +1,79 @@
+#!/bin/sh
+# Select presentation by local destination address, never by Host/client IP.
+set -eu
+config=${PLAYER_NETWORK_CONFIG:-/etc/player/player.conf}
+runtime=${PLAYER_NETWORK_RUNTIME:-/run/player-network}
+ip=${PLAYER_NETWORK_IP:-ip}
+nginx=${PLAYER_NETWORK_NGINX:-/usr/sbin/nginx}
+nginx_pid=${PLAYER_NETWORK_NGINX_PID:-/run/nginx.pid}
+interval=${PLAYER_NETWORK_INTERVAL:-2}
+
+render_map() (
+    INTERFACE_MODES=0
+    STILL_INTERFACES=eth0
+    if [ -f "$config" ]; then . "$config"; fi
+    case "$INTERFACE_MODES" in 0) exit 0 ;; 1) ;; *) exit 1 ;; esac
+    for interface in $STILL_INTERFACES; do
+        case "$interface" in ''|*[!a-zA-Z0-9_.-]*|-*) exit 1 ;; esac
+        [ "${#interface}" -le 15 ] || exit 1
+    done
+    command -v "$ip" >/dev/null 2>&1 || exit 1
+    {
+        for interface in $STILL_INTERFACES; do
+            "$ip" -o address show dev "$interface" 2>/dev/null |
+                awk '($3 == "inet" || $3 == "inet6") &&
+                     $0 !~ /(^| )tentative( |$)/ && $0 !~ /(^| )dadfailed( |$)/ {
+                    split($4, address, "/")
+                    if (address[1] ~ /^[0-9a-fA-F:.]+$/) print address[1] " still;"
+                }'
+        done
+    } | LC_ALL=C sort -u
+)
+
+update_map() (
+    # This directory is created by root at boot, outside player-owned tmpfs.
+    mkdir -p "$runtime"
+    chmod 755 "$runtime"
+    map=$runtime/presentation.map
+    [ -f "$map" ] || : > "$map"
+    chmod 644 "$map"
+    candidate=$(mktemp "$runtime/.candidate.XXXXXX")
+    previous=$(mktemp "$runtime/.previous.XXXXXX")
+    trap 'rm -f "$candidate" "$previous"' EXIT
+    if ! render_map > "$candidate" 2>/dev/null; then
+        echo 'Invalid presentation configuration; previous map retained.' > "$runtime/error.log"
+        exit 1
+    fi
+    if cmp -s "$candidate" "$map"; then
+        rm -f "$runtime/error.log"
+        exit 0
+    fi
+    cp "$map" "$previous"
+    chmod 644 "$candidate"
+    mv "$candidate" "$map"
+    # Before S50nginx starts there is no process to reload. S50 validates it.
+    if [ -f "$nginx_pid" ] && kill -0 "$(cat "$nginx_pid")" 2>/dev/null; then
+        if ! "$nginx" -t -q > "$runtime/nginx-check.log" 2>&1; then
+            mv "$previous" "$map"
+            echo 'Nginx configuration check failed; previous map retained.' > "$runtime/error.log"
+            exit 1
+        fi
+        if ! "$nginx" -s reload > "$runtime/nginx-reload.log" 2>&1; then
+            mv "$previous" "$map"
+            echo 'Nginx reload failed; previous map retained.' > "$runtime/error.log"
+            exit 1
+        fi
+    fi
+    rm -f "$runtime/error.log"
+)
+
+case "${1:-}" in
+    --render) render_map 2>/dev/null ;;
+    --once) update_map ;;
+    '')
+        case "$interval" in ''|*[!0-9]*|0) exit 2 ;; esac
+        trap 'exit 0' INT TERM
+        while :; do update_map || true; sleep "$interval"; done
+        ;;
+    *) echo 'Usage: player-network [--render|--once]' >&2; exit 2 ;;
+esac

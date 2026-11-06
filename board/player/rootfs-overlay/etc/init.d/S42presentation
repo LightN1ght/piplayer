@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+pidfile=/run/player-network.pid
+case "${1:-}" in
+  start)
+    if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then exit 0; fi
+    # Create the map before S50nginx, even without an Ethernet address yet.
+    /usr/sbin/player-network --once || true
+    start-stop-daemon -S -b -m -p "$pidfile" -x /usr/sbin/player-network
+    ;;
+  stop)
+    if [ -f "$pidfile" ]; then
+      pid=$(cat "$pidfile")
+      case "$pid" in ''|*[!0-9]*) exit 1 ;; esac
+      kill "$pid" 2>/dev/null || true
+      tries=0
+      while kill -0 "$pid" 2>/dev/null; do
+        tries=$((tries + 1))
+        [ "$tries" -le 4 ] || exit 1
+        sleep 1
+      done
+    fi
+    rm -f "$pidfile"
+    ;;
+  restart) "$0" stop; sleep 1; "$0" start ;;
+  *) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac

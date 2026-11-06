@@ -1,3 +1,7 @@
 # playerd needs both stat itself and GNU-style -c format strings.
 CONFIG_STAT=y
 CONFIG_FEATURE_STAT_FORMAT=y
+# Stable HLS publication uses only BusyBox tools, without another interpreter.
+CONFIG_AWK=y
+CONFIG_FLOCK=y
+CONFIG_FEATURE_FIND_MMIN=y
