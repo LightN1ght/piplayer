@@ -11,6 +11,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / 'board/player/rootfs-overlay/usr/bin/playerd'
+PUBLISHER = ROOT / 'board/player/rootfs-overlay/usr/bin/player-publish'
+PUBLISH_AWK = ROOT / 'board/player/rootfs-overlay/usr/libexec/player-publish.awk'
 
 
 class MediaLifecycle(unittest.TestCase):
@@ -27,7 +29,7 @@ class MediaLifecycle(unittest.TestCase):
                             '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
                             '-g', '25', '-sc_threshold', '0', '-c:a', 'aac', str(sample)], check=True)
             env = dict(os.environ, PLAYER_DATA=str(data), PLAYER_RUNTIME=str(runtime), PLAYER_INTERVAL='0.2',
-                       PLAYER_STALL_TIMEOUT='4')
+                       PLAYER_STALL_TIMEOUT='4', PLAYER_PUBLISHER=str(PUBLISHER), PLAYER_PUBLISH_AWK=str(PUBLISH_AWK))
             worker = subprocess.Popen(['sh', str(WORKER)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
             def status():
@@ -109,7 +111,9 @@ class MediaLifecycle(unittest.TestCase):
                 self.assertEqual(len(ffmpeg_pids), 1, 'Expected exactly one running FFmpeg')
                 os.kill(ffmpeg_pids[0], signal.SIGSTOP)
                 wait_for(lambda s: s.get('state') == 'playing' and s.get('generation') != recovered['generation'], timeout=20)
-                self.assertLessEqual(len(list((runtime / 'hls').glob('*/*.ts'))), 9)
+                # Public HLS deliberately retains referenced/retired segments
+                # across generations; it is no longer just one private window.
+                self.assertLessEqual(len(list((runtime / 'hls').glob('*/*.ts'))), 40)
             finally:
                 worker.terminate()
                 try:

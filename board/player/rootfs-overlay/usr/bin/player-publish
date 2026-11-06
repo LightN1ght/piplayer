@@ -1,0 +1,103 @@
+#!/bin/sh
+# Construct one continuous live playlist from playerd's private playlists.
+set -u
+runtime=${PLAYER_RUNTIME:-/run/player}
+interval=${PLAYER_PUBLISH_INTERVAL:-1}
+awk_script=${PLAYER_PUBLISH_AWK:-/usr/libexec/player-publish.awk}
+state=$runtime/publish.state
+public=$runtime/stream.m3u8
+error=$runtime/stream-error.log
+
+once() (
+    mkdir -p "$runtime" || exit 1
+    exec 9> "$runtime/publish.lock" || exit 1
+    flock -n 9 || exit 0
+    [ -f "$runtime/status.json" ] || exit 0
+    generation=$(sed -n 's/.*"generation":"\([A-Za-z0-9_-]*\)".*/\1/p' "$runtime/status.json")
+    case "$generation" in ''|*[!A-Za-z0-9_-]*) exit 0 ;; esac
+    source=$runtime/hls/$generation/index.m3u8
+    [ -f "$source" ] || exit 0
+    if [ -n "${PLAYER_PUBLISH_NOW:-}" ]; then
+        now=$PLAYER_PUBLISH_NOW
+    else
+        read -r uptime unused < /proc/uptime || exit 1
+        now=${uptime%%.*}
+    fi
+    case "$now" in ''|*[!0-9]*) exit 1 ;; esac
+    state_tmp=$(mktemp "$runtime/.publish-state.XXXXXX") || exit 1
+    list_tmp=$(mktemp "$runtime/.publish-list.XXXXXX") || { rm -f "$state_tmp"; exit 1; }
+    input_tmp=$(mktemp "$runtime/.publish-input.XXXXXX") || { rm -f "$state_tmp" "$list_tmp"; exit 1; }
+    trap 'rm -f "$state_tmp" "$list_tmp" "$input_tmp"' EXIT
+    # Snapshot the atomically written private playlist so a concurrent update
+    # cannot produce a half-read input.
+    cp "$source" "$input_tmp" || exit 1
+    [ -f "$state" ] || : > "$state"
+    if ! LC_ALL=C awk -v statefile="$state" -v generation="$generation" -v now="$now" \
+        -v stateout="$state_tmp" -v listout="$list_tmp" -f "$awk_script" "$state" "$input_tmp"; then
+        printf '%s\n' 'Cannot publish invalid or unsupported HLS input.' > "$error"
+        exit 1
+    fi
+    # Every referenced URI must already exist before the playlist is exposed.
+    while IFS='|' read -r kind seq gen private name dur boundary disc retired; do
+        [ "$kind" = E ] || continue
+        [ "$retired" != -1 ] || [ -s "$runtime/hls/$gen/$name" ] || {
+            printf '%s\n' 'Cannot publish HLS: a required segment is missing.' > "$error"
+            exit 1
+        }
+    done < "$state_tmp"
+    # State first: after an interruption a later invocation can regenerate the
+    # playlist from it. Both individual files are replaced atomically.
+    mv -f "$state_tmp" "$state" || exit 1
+    [ ! -s "$list_tmp" ] || mv -f "$list_tmp" "$public" || exit 1
+    rm -f "$error"
+
+    # Retired segments are retained for >=36 seconds, including segments from
+    # the current generation. Unregistered old files are a separate safety net.
+    while IFS='|' read -r kind seq gen private name dur boundary disc retired; do
+        [ "$kind" = D ] || continue
+        rm -f "$runtime/hls/$gen/$name"
+    done < "$state"
+    for dir in "$runtime/hls/"*; do
+        [ -d "$dir" ] || continue
+        gen=${dir##*/}
+        case "$gen" in ''|*[!A-Za-z0-9_-]*) continue ;; esac
+        find "$dir" -maxdepth 1 -type f -name '*.ts' -mmin +1 2>/dev/null | while IFS= read -r path; do
+            name=${path##*/}
+            # The current private playlist can advance after our snapshot; read
+            # it again and retain every URI that FFmpeg still advertises.
+            if [ "$gen" = "$generation" ] && grep -Fxq "$name" "$dir/index.m3u8" 2>/dev/null; then
+                continue
+            fi
+            if ! awk -F '|' -v g="$gen" -v n="$name" '$1=="E" && $3==g && $5==n { found=1 } END { exit !found }' "$state"; then
+                rm -f "$path"
+            fi
+        done
+        # The old private playlist is no longer used once all its TS files
+        # are gone; wait at least a minute before removing it.
+        if [ "$gen" != "$generation" ] &&
+           find "$dir" -maxdepth 0 -type d -mmin +1 -print 2>/dev/null | grep -q . &&
+           ! awk -F '|' -v g="$gen" '$1=="E" && $3==g { found=1 } END { exit !found }' "$state" &&
+           ! find "$dir" -maxdepth 1 -type f -name '*.ts' -print -quit 2>/dev/null | grep -q .; then
+            find "$dir" -maxdepth 1 -type f -name index.m3u8 -mmin +1 -exec rm -f '{}' \; 2>/dev/null
+            rmdir "$dir" 2>/dev/null || true
+        fi
+    done
+)
+
+case "${1:-}" in
+    --once) once ;;
+    '')
+        case "$interval" in ''|*[!0-9]*|0) exit 2 ;; esac
+        trap 'exit 0' INT TERM
+        mkdir -p "$runtime" || exit 1
+        while :; do
+            read -r uptime unused < /proc/uptime || exit 1
+            heartbeat_tmp=$(mktemp "$runtime/.publisher-heartbeat.XXXXXX") || exit 1
+            printf '%s\n' "${uptime%%.*}" > "$heartbeat_tmp" &&
+                mv -f "$heartbeat_tmp" "$runtime/publisher-heartbeat" || exit 1
+            once || true
+            sleep "$interval"
+        done
+        ;;
+    *) echo 'Usage: player-publish [--once]' >&2; exit 2 ;;
+esac

@@ -9,7 +9,12 @@
   let generation = '';
   let soundRequested = false;
   let reconnectAt = 0;
+  let rejectionShown = false;
   const say = text => { message.textContent = text; message.hidden = !text; };
+  const failureMessage = error => error === 'needs_preparation'
+    ? 'Ролик нужно подготовить для HLS. Используйте prepare-video.sh на компьютере.'
+    : error === 'unsupported_media' ? 'Файл не поддерживается. Нужен MP4 / H.264 / AAC.'
+    : error === 'buffer_busy' ? 'Файл загружен и ждёт свободного буфера. Повторная загрузка не нужна.' : '';
 
   function disconnect() {
     if (hls) hls.destroy();
@@ -73,16 +78,24 @@
     try {
       const response = await fetch('/status.json', { cache: 'no-store', signal: AbortSignal.timeout(4000) });
       if (!response.ok) throw new Error('status');
+      if (response.headers.get('X-PiPlayer-Mode') === 'still') {
+        disconnect();
+        window.location.replace('/');
+        return;
+      }
       const status = await response.json();
       if (status.state === 'playing') {
         if (status.generation !== generation && Date.now() >= reconnectAt) connect(status.generation);
         start.hidden = soundRequested;
+        const rejection = failureMessage(status.error);
+        if (rejection) { say(rejection); rejectionShown = true; }
+        else if (rejectionShown) { say(''); rejectionShown = false; }
       } else {
         if (generation) disconnect();
         start.hidden = true;
-        if (status.state === 'waiting') say(status.error === 'unsupported_media' ? 'Файл не поддерживается. Нужен MP4 / H.264 / AAC.' : 'Загрузите видео через SFTP');
+        if (status.state === 'waiting') say(failureMessage(status.error) || 'Загрузите видео через SFTP');
         else if (status.state === 'buffering') say('Подготовка трансляции…');
-        else say(status.error === 'unsupported_media' ? 'Файл не поддерживается. Нужен MP4 / H.264 / AAC.' : 'Восстановление трансляции…');
+        else say(failureMessage(status.error) || 'Восстановление трансляции…');
       }
     } catch (_) { say('Нет связи с устройством. Повторное подключение…'); }
     finally { window.setTimeout(poll, 2000); }

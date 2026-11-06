@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import secrets
 import shlex
+import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,14 @@ if len(data['country']) != 2 or not data['country'].isalpha():
     raise SystemExit('Country must be a two-letter code')
 if int(ipaddress.IPv4Address(data['address'])) % 256 != 1:
     raise SystemExit('AP address must end in .1 (DHCP uses .20-.100 in the same /24)')
+interface_modes = data.get('interface_modes', 0)
+if interface_modes not in (0, 1):
+    raise SystemExit('interface_modes must be 0 or 1')
+still_interfaces = data.get('still_interfaces', 'eth0')
+if not isinstance(still_interfaces, str) or any(
+        not re.fullmatch(r'[A-Za-z0-9_.][A-Za-z0-9_.-]{0,14}', name)
+        for name in still_interfaces.split()):
+    raise SystemExit('still_interfaces must contain valid interface names separated by spaces')
 password_hash = subprocess.check_output(
     ['openssl', 'passwd', '-6', '-stdin'], input=data['ssh_password']+'\n', text=True).strip()
 (LOCAL / 'users.txt').write_text(
@@ -38,7 +47,9 @@ password_hash = subprocess.check_output(
 os.chmod(LOCAL / 'users.txt', 0o600)
 values = {'AP_SSID': data['ssid'], 'AP_PASSWORD': data['wifi_password'],
           'AP_COUNTRY': data['country'], 'AP_CHANNEL': str(data['channel']),
-          'AP_ADDRESS': data['address'], 'AP_INTERFACE': 'wlan0'}
+          'AP_ADDRESS': data['address'], 'AP_INTERFACE': 'wlan0',
+          'INTERFACE_MODES': str(int(interface_modes)),
+          'STILL_INTERFACES': ' '.join(still_interfaces.split())}
 (LOCAL / 'player.conf').write_text(''.join(f'{k}={shlex.quote(v)}\n' for k,v in values.items()))
 os.chmod(LOCAL / 'player.conf', 0o600)
 key = LOCAL / 'admin_ed25519'
