@@ -26,4 +26,4 @@
 - Статичный режим интерфейсов opt-in: `INTERFACE_MODES=0` по умолчанию. Привязка по фактическим именам и destination IPv4/IPv6, не по MAC, клиенту или Host. На статичном адресе HLS даёт 404; SSH/SFTP остаются доступны.
 - Аппаратный baseline и обновлённый HLS/Ethernet raw учитываются раздельно. Новый raw прошёл хостовые и чистые ARM VM проверки с внешними FFmpeg/mpv, но это не заменяет аппаратную проверку обновления. Точная программа организатора неизвестна.
 
-Практические инструкции: [HLS](HLS.md), [ETHERNET](ETHERNET.md). Актуальный статус: [CURRENT_STATE](CURRENT_STATE.md).
+Практические инструкции: [HLS](../docs/HLS.md), [ETHERNET](../docs/ETHERNET.md). Актуальный статус: [CURRENT_STATE](CURRENT_STATE.md).
