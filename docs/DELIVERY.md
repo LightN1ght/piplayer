@@ -10,7 +10,7 @@ XZ: **29 121 940 байт**, SHA256 `62dbe6c74f7167cbbb10bcedf006894b81a93d6a682
 
 Основной сценарий базового образа проверен 5–6 ноября 2026 на Raspberry Pi 4 Model B Rev 1.2 с 4 GB RAM. Использовалась USB-флешка; старую microSD и EEPROM не меняли.
 
-Исходники и документация опубликованы в приватном [LightN1ght/piplayer](https://github.com/LightN1ght/piplayer), ветка main. Готовые образы и приватные данные доступа остаются отдельным комплектом.
+Исходники и документация опубликованы в приватном [LightN1ght/piplayer](https://github.com/LightN1ght/piplayer), базовая ветка main, новые функции в `codex/ethernet-modes` ([PR #1](https://github.com/LightN1ght/piplayer/pull/1)). Готовые образы и приватные данные доступа остаются отдельным комплектом.
 
 ## Файлы в dist
 
